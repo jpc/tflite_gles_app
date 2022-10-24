@@ -20,6 +20,7 @@
 #include "util_camera_capture.h"
 #include "util_video_decode.h"
 #include "render_imgui.h"
+#include "assertgl.h"
 
 #define UNUSED(x) (void)(x)
 
@@ -396,6 +397,112 @@ setup_imgui (int win_w, int win_h)
     s_gui_prop.cur_mask_id = 0;
 }
 
+#include <stdio.h>
+#include <gst/gst.h>
+#include <gst/app/app.h>
+
+GstElement *pipeline;
+GstElement *appsink;
+unsigned frame_no = 0;
+
+int video_gst_init(int *argc, char **argv[])
+{
+  /* Initialize GStreamer */
+  gst_init (argc, argv);
+
+  /* Build the pipeline */
+  pipeline =
+      gst_parse_launch
+      ("uridecodebin uri=file:///home/user/input-480p.mkv ! videoconvert ! video/x-raw,format=YUY2 ! videocrop name=crop ! appsink name=appsink",
+      NULL);
+
+  /* Start playing */
+  gst_element_set_state (pipeline, GST_STATE_PLAYING);
+
+  appsink = gst_bin_get_by_name (GST_BIN (pipeline), "appsink");
+  fprintf(stderr, "got appsink: %p\n", appsink);
+
+  GstElement *cropper = gst_bin_get_by_name (GST_BIN (pipeline), "crop");
+
+  int lrmargin = (640-360)/2;
+  fprintf(stderr, "setting up crop lr: %d\n", lrmargin);
+  g_object_set(cropper, "left", lrmargin, "right", lrmargin, NULL);
+
+  // while (1) {
+  // }
+  return 0;
+}
+
+void video_gst_deinit()
+{
+  // GstBus *bus;
+  // GstMessage *msg;
+
+  // /* Wait until error or EOS */
+  // bus = gst_element_get_bus (pipeline);
+  // msg =
+  //     gst_bus_timed_pop_filtered (bus, GST_CLOCK_TIME_NONE,
+  //     GST_MESSAGE_ERROR | GST_MESSAGE_EOS);
+
+  // fprintf(stderr, "got bus: %p\n", bus);
+  // /* See next tutorial for proper error message handling/parsing */
+  // if (GST_MESSAGE_TYPE (msg) == GST_MESSAGE_ERROR) {
+  //   g_error ("An error occurred! Re-run with the GST_DEBUG=*:WARN environment "
+  //       "variable set for more details.");
+  // }
+
+  // /* Free resources */
+  // gst_message_unref (msg);
+  // gst_object_unref (bus);
+  // gst_element_set_state (pipeline, GST_STATE_NULL);
+  // gst_object_unref (pipeline);
+}
+
+void video_gst_update_texture(texture_2d_t *vidtex)
+{
+    GstSample *sample;
+    g_signal_emit_by_name (appsink, "pull-sample", &sample);
+
+    if(!sample) {
+      gst_element_seek_simple(pipeline, GST_FORMAT_TIME, GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT, 0 * GST_MSECOND);
+      return;
+    }
+
+    fprintf(stderr, "got sample %d\n", frame_no++);
+
+    GstBuffer *buf = gst_sample_get_buffer(sample);
+    GstCaps *caps = gst_sample_get_caps(sample);
+    GstStructure *structure = gst_caps_get_structure(caps, 0);
+
+    GST_LOG ("caps are %" GST_PTR_FORMAT, caps);
+
+    int   video_w, video_h;
+    gst_structure_get_int(structure, "width", &video_w);
+    gst_structure_get_int(structure, "height", &video_h);
+    const char *video_fmt = gst_structure_get_string(structure, "format");
+
+    fprintf(stderr, "Sample: %dx%d %s\n", video_w, video_h, video_fmt);
+    GstMapInfo map;
+    gst_buffer_map(buf, &map, GST_MAP_READ);
+    void* gstData = map.data;
+    const unsigned gstSize = map.size;
+
+    int texw = video_w;
+    int texh = video_h;
+    int texfmt = GL_RGBA;
+    if (!strcmp(video_fmt, "YUY2")) {
+        texw = video_w / 2;
+    }
+
+    glBindTexture (GL_TEXTURE_2D, vidtex->texid);
+    glTexSubImage2D (GL_TEXTURE_2D, 0, 0, 0, texw, texh, texfmt, GL_UNSIGNED_BYTE, gstData);
+
+    GLASSERT();
+
+    gst_buffer_unmap(buf, &map);
+    gst_sample_unref (sample);
+
+}
 
 /*--------------------------------------------------------------------------- *
  *      M A I N    F U N C T I O N
@@ -432,12 +539,12 @@ main(int argc, char *argv[])
             case 'q':
                 use_quantized_tflite = 1;
                 break;
-#if defined (USE_INPUT_VIDEO_DECODE)
+// #if defined (USE_INPUT_VIDEO_DECODE)
             case 'v':
                 enable_video = 1;
                 input_name = optarg;
                 break;
-#endif
+// #endif
             case 'x':
                 enable_camera = 0;
                 break;
@@ -472,17 +579,18 @@ main(int argc, char *argv[])
     glViewport (0, 0, win_w, win_h);
 #endif
 
-#if defined (USE_INPUT_VIDEO_DECODE)
+// #if defined (USE_INPUT_VIDEO_DECODE)
     /* initialize FFmpeg video decode */
-    if (enable_video && init_video_decode () == 0)
+    if (enable_video && video_gst_init(&argc, &argv) == 0)
     {
-        create_video_texture (&captex, input_name);
+        create_2d_texture_ex (&captex, NULL, 360, 360, pixfmt_fourcc('Y', 'U', 'Y', 'V'));
+        // create_video_texture (&captex, input_name);
         texw = captex.width;
         texh = captex.height;
         enable_camera = 0;
     }
     else
-#endif
+// #endif
 #if defined (USE_INPUT_CAMERA_CAPTURE)
     /* initialize V4L2 capture function */
     if (enable_camera && init_capture (CAPTURE_SQUARED_CROP) == 0)
@@ -577,13 +685,14 @@ main(int argc, char *argv[])
         glClear (GL_COLOR_BUFFER_BIT);
         glViewport (0, 0, win_w, win_h);
 
-#if defined (USE_INPUT_VIDEO_DECODE)
+// #if defined (USE_INPUT_VIDEO_DECODE)
         /* initialize FFmpeg video decode */
         if (enable_video)
         {
-            update_video_texture (&captex);
+            // update_video_texture (&captex);
+            video_gst_update_texture(&captex);
         }
-#endif
+// #endif
 #if defined (USE_INPUT_CAMERA_CAPTURE)
         if (enable_camera)
         {

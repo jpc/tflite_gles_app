@@ -40,6 +40,7 @@ int  create_video_texture (texture_2d_t *vidtex, const char *fname);
 void update_video_texture (texture_2d_t *vidtex);
 #endif
 
+int create_2d_texture_ex (texture_2d_t *tex2d, void *imgbuf, int width, int height, uint32_t fmt);
 #ifdef __cplusplus
 }
 #endif

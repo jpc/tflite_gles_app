@@ -51,6 +51,11 @@ LIBS   += $(shell pkg-config --libs   $(FFMPEG_LIBS)) -lm
 SRCS   += $(MAKETOP)/common/util_video_decode.c
 endif
 
+GST_LIBS= gstreamer-1.0 \
+          gstreamer-app-1.0
+CFLAGS += $(shell pkg-config --cflags $(GST_LIBS))
+LIBS   += $(shell pkg-config --libs   $(GST_LIBS))
+
 # ---------------------
 #  for ImGui
 # ---------------------
