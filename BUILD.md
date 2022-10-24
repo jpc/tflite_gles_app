@@ -17,3 +17,10 @@ Afterwards you should be fetch the demo repository (https://github.com/jpc/tflit
     git clone git@github.com:jpc/tflite_gles_app.git
     cd tflite_gles_app/gl2facemesh
     make -j8 TARGET_ENV=wayland TFLITE_DELEGATE=GPU_DELEGATEV2
+
+The CPU version:
+    make -j8 TARGET_ENV=wayland
+
+Running the app (GStreamer errors are mostly ignored right now so GST_DEBUG is crucial):
+
+    GST_DEBUG=*:WARN ./gl2facemesh -v input480p.mkv'
