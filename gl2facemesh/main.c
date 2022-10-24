@@ -405,7 +405,7 @@ GstElement *pipeline;
 GstElement *appsink;
 unsigned frame_no = 0;
 
-int video_gst_init(int *argc, char **argv[])
+int video_gst_init(char *input_name, int *argc, char **argv[])
 {
   /* Initialize GStreamer */
   gst_init (argc, argv);
@@ -413,20 +413,23 @@ int video_gst_init(int *argc, char **argv[])
   /* Build the pipeline */
   pipeline =
       gst_parse_launch
-      ("uridecodebin uri=file:///home/user/input-480p.mkv ! videoconvert ! video/x-raw,format=YUY2 ! videocrop name=crop ! appsink name=appsink",
+      ("filesrc name=src ! decodebin ! videoconvert ! video/x-raw,format=YUY2 ! videocrop name=crop ! appsink name=appsink",
       NULL);
-
-  /* Start playing */
-  gst_element_set_state (pipeline, GST_STATE_PLAYING);
 
   appsink = gst_bin_get_by_name (GST_BIN (pipeline), "appsink");
   fprintf(stderr, "got appsink: %p\n", appsink);
+
+  GstElement *src = gst_bin_get_by_name (GST_BIN (pipeline), "src");
+  g_object_set(src, "location", input_name, NULL);
 
   GstElement *cropper = gst_bin_get_by_name (GST_BIN (pipeline), "crop");
 
   int lrmargin = (640-360)/2;
   fprintf(stderr, "setting up crop lr: %d\n", lrmargin);
   g_object_set(cropper, "left", lrmargin, "right", lrmargin, NULL);
+
+  /* Start playing */
+  gst_element_set_state (pipeline, GST_STATE_PLAYING);
 
   // while (1) {
   // }
@@ -581,7 +584,7 @@ main(int argc, char *argv[])
 
 // #if defined (USE_INPUT_VIDEO_DECODE)
     /* initialize FFmpeg video decode */
-    if (enable_video && video_gst_init(&argc, &argv) == 0)
+    if (enable_video && video_gst_init(input_name, &argc, &argv) == 0)
     {
         create_2d_texture_ex (&captex, NULL, 360, 360, pixfmt_fourcc('Y', 'U', 'Y', 'V'));
         // create_video_texture (&captex, input_name);
